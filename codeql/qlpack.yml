@@ -1,0 +1,6 @@
+name: astrogilda/idna-ip-literal-smuggle
+version: 0.1.1
+description: UTS-46 IDNA digit-fold IP-literal smuggling detection for Go.
+extractor: go
+dependencies:
+  codeql/go-all: '*'

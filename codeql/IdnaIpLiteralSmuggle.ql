@@ -21,12 +21,12 @@
 
 import go
 import IdnaIpLiteralSmuggle
-import IdnaIpLiteralSmuggle::Flow::PathGraph
+import Flow::PathGraph
 
 from
-  IdnaIpLiteralSmuggle::Flow::PathNode source,
-  IdnaIpLiteralSmuggle::Flow::PathNode sink
-where IdnaIpLiteralSmuggle::Flow::flowPath(source, sink)
+  Flow::PathNode source,
+  Flow::PathNode sink
+where Flow::flowPath(source, sink)
 select sink.getNode(), source, sink,
   "Untrusted hostname from $@ flows through `idna.ToASCII` (which performs UTS-46 NFKC digit folding) and reaches this hostname sink without a post-IDNA `net.ParseIP` recheck (after a trailing-dot trim).",
   source.getNode(), "this user-controlled value"

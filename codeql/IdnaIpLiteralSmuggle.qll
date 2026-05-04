@@ -92,8 +92,6 @@
 
 import go
 
-/** Stateful taint-tracking configuration for IDNA digit-fold IP-literal smuggling. */
-module IdnaIpLiteralSmuggle {
   /**
    * The two flow states in the IDNA-smuggle taint configuration.
    *
@@ -106,7 +104,7 @@ module IdnaIpLiteralSmuggle {
     TPostIdna()
 
   /** A flow state carried by tainted values in this configuration. */
-  class FlowState extends TFlowState {
+  class IdnaFlowState extends TFlowState {
     /** Gets a human-readable description of this state. */
     string toString() {
       this = TPreIdna() and result = "PreIdna"
@@ -145,11 +143,11 @@ module IdnaIpLiteralSmuggle {
    * Holds if `node` is the input argument to an IDNA mapping call and `result`
    * is the call's primary string return.
    */
-  predicate idnaMapInToOut(DataFlow::Node node, DataFlow::Node result) {
+  predicate idnaMapInToOut(DataFlow::Node node, DataFlow::Node out) {
     exists(DataFlow::CallNode call |
       idnaMappingCall(call) and
       node = call.getArgument(0) and
-      result = call.getResult(0)
+      out = call.getResult(0)
     )
   }
 
@@ -177,12 +175,12 @@ module IdnaIpLiteralSmuggle {
    * trailing-dot strip that the safe pattern requires before the post-IDNA
    * IP recheck.
    */
-  predicate trailingDotTrim(DataFlow::Node node, DataFlow::Node result) {
+  predicate trailingDotTrim(DataFlow::Node node, DataFlow::Node out) {
     exists(DataFlow::CallNode c |
       c.getTarget().hasQualifiedName("strings", ["TrimSuffix", "TrimRight"]) and
       c.getArgument(1).getStringValue() = "." and
       node = c.getArgument(0) and
-      result = c.getResult(0)
+      out = c.getResult(0)
     )
   }
 
@@ -195,9 +193,9 @@ module IdnaIpLiteralSmuggle {
    * global-value-number as `node`. The lower bound is unconstrained because
    * the idiomatic form `out[:len(out)-1]` omits it (implicit zero).
    */
-  predicate trailingDotSlice(DataFlow::Node node, DataFlow::Node result) {
-    exists(Assignment as, SliceExpr se, DataFlow::CallNode lenCall, SubExpr sub |
-      as.getRhs() = se and
+  predicate trailingDotSlice(DataFlow::Node node, DataFlow::Node out) {
+    exists(Assignment asgn, SliceExpr se, DataFlow::CallNode lenCall, SubExpr sub |
+      asgn.getRhs() = se and
       se.getBase() = node.asExpr() and
       se.getHigh() = sub and
       sub.getRightOperand().getIntValue() = 1 and
@@ -205,7 +203,7 @@ module IdnaIpLiteralSmuggle {
       lenCall.getTarget().hasQualifiedName("builtin", "len") and
       lenCall.getArgument(0).asExpr().getGlobalValueNumber() =
         node.asExpr().getGlobalValueNumber() and
-      result.asExpr() = as.getAnLhs()
+      out.asExpr() = asgn.getAnLhs()
     )
   }
 
@@ -316,7 +314,7 @@ module IdnaIpLiteralSmuggle {
 
   /** Configuration implementing the stateful taint-tracking signature. */
   module Config implements DataFlow::StateConfigSig {
-    class FlowState = IdnaIpLiteralSmuggle::FlowState;
+    class FlowState = IdnaFlowState;
 
     predicate isSource(DataFlow::Node source, FlowState state) {
       source instanceof ActiveThreatModelSource and state = TPreIdna()
@@ -359,6 +357,5 @@ module IdnaIpLiteralSmuggle {
     predicate observeDiffInformedIncrementalMode() { any() }
   }
 
-  /** Tracks taint flow for IDNA digit-fold IP-literal smuggling. */
-  module Flow = TaintTracking::GlobalWithState<Config>;
-}
+/** Tracks taint flow for IDNA digit-fold IP-literal smuggling. */
+module Flow = TaintTracking::GlobalWithState<Config>;
