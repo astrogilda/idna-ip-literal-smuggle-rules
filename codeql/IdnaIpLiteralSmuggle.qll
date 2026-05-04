@@ -103,16 +103,6 @@ import go
     TPreIdna() or
     TPostIdna()
 
-  /** A flow state carried by tainted values in this configuration. */
-  class IdnaFlowState extends TFlowState {
-    /** Gets a human-readable description of this state. */
-    string toString() {
-      this = TPreIdna() and result = "PreIdna"
-      or
-      this = TPostIdna() and result = "PostIdna"
-    }
-  }
-
   /**
    * Holds if `call` is a call to one of the `idna` mapping entry points whose
    * UTS-46 NFKC behavior performs the digit fold. The argument-0 input is
@@ -314,7 +304,15 @@ import go
 
   /** Configuration implementing the stateful taint-tracking signature. */
   module Config implements DataFlow::StateConfigSig {
-    class FlowState = IdnaFlowState;
+    /** A flow state carried by tainted values in this configuration. */
+    class FlowState extends TFlowState {
+      /** Gets a human-readable description of this state. */
+      string toString() {
+        this = TPreIdna() and result = "PreIdna"
+        or
+        this = TPostIdna() and result = "PostIdna"
+      }
+    }
 
     predicate isSource(DataFlow::Node source, FlowState state) {
       source instanceof ActiveThreatModelSource and state = TPreIdna()

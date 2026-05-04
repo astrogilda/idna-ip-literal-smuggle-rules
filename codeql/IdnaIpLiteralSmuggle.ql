@@ -11,6 +11,8 @@
  *              UTS-46 mapping runs.
  * @id go/idna-ip-literal-smuggle
  * @kind path-problem
+ * @problem.severity warning
+ * @security-severity 8.1
  * @precision high
  * @tags security
  *       experimental
