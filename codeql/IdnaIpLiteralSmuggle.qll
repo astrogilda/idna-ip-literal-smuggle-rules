@@ -37,8 +37,8 @@
  * `netip.ParsePrefix` consumed in `TPostIdna`. The safe pattern requires
  * trimming trailing dots before re-checking. Without the trim the literal
  * `"0.¹.0.0."` maps to `"0.1.0.0."`, which `net.ParseIP` rejects, so the
- * smuggle survives. The configuration therefore additionally requires
- * that the post-IDNA value reaching the parser was produced by one of:
+ * smuggle survives. The configuration also requires that the post-IDNA
+ * value reaching the parser was produced by one of:
  *   (a) a `strings.TrimRight(_, ".")` call. This is the strict form. It
  *       handles multi-trailing-dot variants where UTS-46 mapping produces
  *       multiple trailing ASCII dots from fullwidth U+FF0E or ideographic
