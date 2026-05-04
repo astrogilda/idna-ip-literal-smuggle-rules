@@ -126,7 +126,7 @@ func p2dMathSubscriptNine(p *idna.Profile) {
 // Class 3: Circled digits (U+2460..U+2468, U+24EA).
 // =====================================================================
 
-// P3a: Circled digit â‘  (U+2460) -> http.NewRequest.
+// P3a: Circled digit ① (U+2460) -> http.NewRequest.
 func p3aCircledDigitOne() {
 	host := "0.①.0.0"
 	ace, _ := idna.Lookup.ToASCII(host)
@@ -134,7 +134,7 @@ func p3aCircledDigitOne() {
 	_ = req
 }
 
-// P3b: Circled digit zero â“ª (U+24EA) -> *url.URL.Host assignment.
+// P3b: Circled digit zero ⓪ (U+24EA) -> *url.URL.Host assignment.
 func p3bCircledDigitZero() {
 	host := "0.⓪.0.0"
 	ace, _ := idna.Lookup.ToASCII(host)
@@ -146,7 +146,7 @@ func p3bCircledDigitZero() {
 // Class 4: Fullwidth digits (U+FF10..U+FF19).
 // =====================================================================
 
-// P4a: Fullwidth digit ï¼‘ (U+FF11).
+// P4a: Fullwidth digit １ (U+FF11).
 func p4aFullwidthDigitOne() {
 	host := "0.１.0.0"
 	ace, _ := idna.Lookup.ToASCII(host)
