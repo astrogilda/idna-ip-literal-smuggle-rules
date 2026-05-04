@@ -38,9 +38,7 @@ rules:
     satisfy the post-IDNA recheck contract.
 
   languages: [go]
-  # Severity is intentionally unset. The advisory defers CVSS
-  # calibration to the Go security team; the Semgrep registry can
-  # calibrate downstream.
+  severity: WARNING
   mode: taint
   options:
     interfile: true
@@ -52,39 +50,75 @@ rules:
     patterns:
     - pattern-either:
       # HTTP request fields commonly carrying user-supplied hostnames.
-      - pattern: |
-          ($REQ : *http.Request).Host
-      - pattern: |
-          ($REQ : *http.Request).URL.Host
-      - pattern: |
-          ($REQ : *http.Request).URL.Hostname()
-      - pattern: |
-          ($URL : *url.URL).Host
-      - pattern: |
-          ($URL : *url.URL).Hostname()
+      - patterns:
+        - pattern: $REQ.Host
+        - metavariable-type:
+            metavariable: $REQ
+            type: "*http.Request"
+      - patterns:
+        - pattern: $REQ.URL.Host
+        - metavariable-type:
+            metavariable: $REQ
+            type: "*http.Request"
+      - patterns:
+        - pattern: $REQ.URL.Hostname()
+        - metavariable-type:
+            metavariable: $REQ
+            type: "*http.Request"
+      - patterns:
+        - pattern: $URL.Host
+        - metavariable-type:
+            metavariable: $URL
+            type: "*url.URL"
+      - patterns:
+        - pattern: $URL.Hostname()
+        - metavariable-type:
+            metavariable: $URL
+            type: "*url.URL"
       # Process inputs.
       - pattern: os.Getenv($_)
       - pattern: os.Args[$_]
       - pattern: flag.String(...)
       - pattern: flag.StringVar(...)
       # HTTP header lookups and request plumbing.
-      - pattern: |
-          ($REQ : *http.Request).Header.Get($_)
-      - pattern: |
-          ($REQ : *http.Request).URL.Query().Get($_)
-      - pattern: |
-          ($REQ : *http.Request).FormValue($_)
-      - pattern: |
-          ($REQ : *http.Request).PostFormValue($_)
+      - patterns:
+        - pattern: $REQ.Header.Get($_)
+        - metavariable-type:
+            metavariable: $REQ
+            type: "*http.Request"
+      - patterns:
+        - pattern: $REQ.URL.Query().Get($_)
+        - metavariable-type:
+            metavariable: $REQ
+            type: "*http.Request"
+      - patterns:
+        - pattern: $REQ.FormValue($_)
+        - metavariable-type:
+            metavariable: $REQ
+            type: "*http.Request"
+      - patterns:
+        - pattern: $REQ.PostFormValue($_)
+        - metavariable-type:
+            metavariable: $REQ
+            type: "*http.Request"
       # Stdin / scanned input.
-      - pattern: |
-          ($S : *bufio.Scanner).Text()
+      - patterns:
+        - pattern: $S.Text()
+        - metavariable-type:
+            metavariable: $S
+            type: "*bufio.Scanner"
       # Decoded JSON via *encoding/json.Decoder.
-      - pattern: |
-          ($D : *json.Decoder).Decode($_)
+      - patterns:
+        - pattern: $D.Decode($_)
+        - metavariable-type:
+            metavariable: $D
+            type: "*json.Decoder"
       # Database row scans (first-arg destination).
-      - pattern: |
-          ($R : *sql.Rows).Scan($DST, ...)
+      - patterns:
+        - pattern: $R.Scan($DST, ...)
+        - metavariable-type:
+            metavariable: $R
+            type: "*sql.Rows"
 
   # A hardcoded fold-class codepoint flowing into ToASCII is high
   # confidence regardless of taint origin.
@@ -107,22 +141,28 @@ rules:
         # Extended Arabic-Indic U+06F0-06F9, Devanagari U+0966-096F.
         regex: '"[^"]*[\x{00B2}\x{00B3}\x{00B9}\x{2070}\x{2074}-\x{2079}\x{2080}-\x{2089}\x{2460}-\x{2468}\x{24EA}\x{FF10}-\x{FF19}\x{1D7CE}-\x{1D7FF}\x{1FBF0}-\x{1FBF9}][^"]*"'
 
-  # Propagator: PRE_IDNA reaches a UTS-46-mapping ToASCII call -> output is POST_IDNA.
+  # Label transformation: when PRE_IDNA-tainted data reaches a UTS-46-mapping
+  # ToASCII call site, that call site emits a value labeled POST_IDNA. Semgrep's
+  # idiom for label transformation is a labeled source with `requires:`, not a
+  # propagator (propagators carry the same label across an expression).
+  #
   # The package-level `idna.ToASCII` and `idna.Punycode.ToASCII` are excluded:
   # both dispatch to the Punycode profile, which has nil mapping (no UTS-46 NFKC
   # fold) and therefore cannot produce the digit-fold smuggle this rule targets.
-  pattern-propagators:
-  - patterns:
-    - pattern-either:
-      - pattern: idna.Lookup.ToASCII($IN)
-      - pattern: idna.Display.ToASCII($IN)
-      - pattern: idna.Registration.ToASCII($IN)
-      - pattern: idna.New(...).ToASCII($IN)
-      - pattern: ($P : *idna.Profile).ToASCII($IN)
-    from: $IN
-    to: $RESULT
-    label: POST_IDNA
+  - label: POST_IDNA
     requires: PRE_IDNA
+    patterns:
+    - pattern-either:
+      - pattern: idna.Lookup.ToASCII(...)
+      - pattern: idna.Display.ToASCII(...)
+      - pattern: idna.Registration.ToASCII(...)
+      - pattern: idna.New(...).ToASCII(...)
+      # Var-bound profile fallback: `p := idna.Lookup; p.ToASCII(s)` and similar.
+      - patterns:
+        - pattern: $P.ToASCII(...)
+        - metavariable-type:
+            metavariable: $P
+            type: "*idna.Profile"
 
   pattern-sinks:
   - requires: POST_IDNA
@@ -132,42 +172,75 @@ rules:
       - pattern: net.JoinHostPort($HOST, $_)
       - pattern: net.Dial($_, $HOST)
       - pattern: net.DialTimeout($_, $HOST, $_)
-      - pattern: |
-          ($D : *net.Dialer).Dial($_, $HOST)
-      - pattern: |
-          ($D : *net.Dialer).DialContext($_, $_, $HOST)
+      - patterns:
+        - pattern: $D.Dial($_, $HOST)
+        - metavariable-type:
+            metavariable: $D
+            type: "*net.Dialer"
+      - patterns:
+        - pattern: $D.DialContext($_, $_, $HOST)
+        - metavariable-type:
+            metavariable: $D
+            type: "*net.Dialer"
       - pattern: net.LookupHost($HOST)
       - pattern: net.LookupIP($HOST)
-      - pattern: |
-          ($R : *net.Resolver).LookupHost($_, $HOST)
-      - pattern: |
-          ($R : *net.Resolver).LookupIPAddr($_, $HOST)
+      - patterns:
+        - pattern: $R.LookupHost($_, $HOST)
+        - metavariable-type:
+            metavariable: $R
+            type: "*net.Resolver"
+      - patterns:
+        - pattern: $R.LookupIPAddr($_, $HOST)
+        - metavariable-type:
+            metavariable: $R
+            type: "*net.Resolver"
       # http.Client convenience methods (host is embedded in the URL string).
       - pattern: http.Get($HOST)
       - pattern: http.Head($HOST)
       - pattern: http.Post($HOST, $_, $_)
       - pattern: http.PostForm($HOST, $_)
-      - pattern: |
-          ($C : *http.Client).Get($HOST)
-      - pattern: |
-          ($C : *http.Client).Head($HOST)
-      - pattern: |
-          ($C : *http.Client).Post($HOST, $_, $_)
-      - pattern: |
-          ($C : *http.Client).PostForm($HOST, $_)
+      - patterns:
+        - pattern: $C.Get($HOST)
+        - metavariable-type:
+            metavariable: $C
+            type: "*http.Client"
+      - patterns:
+        - pattern: $C.Head($HOST)
+        - metavariable-type:
+            metavariable: $C
+            type: "*http.Client"
+      - patterns:
+        - pattern: $C.Post($HOST, $_, $_)
+        - metavariable-type:
+            metavariable: $C
+            type: "*http.Client"
+      - patterns:
+        - pattern: $C.PostForm($HOST, $_)
+        - metavariable-type:
+            metavariable: $C
+            type: "*http.Client"
       - pattern: http.NewRequest($_, $HOST, $_)
       - pattern: http.NewRequestWithContext($_, $_, $HOST, $_)
       # URL / TLS / cookie field assignments.
-      - pattern: |
-          ($U : *url.URL).Host = $HOST
+      - patterns:
+        - pattern: $U.Host = $HOST
+        - metavariable-type:
+            metavariable: $U
+            type: "*url.URL"
       - pattern: |
           url.URL{..., Host: $HOST, ...}
-      - pattern: |
-          ($T : *tls.Config).ServerName = $HOST
+      - patterns:
+        - pattern: $T.ServerName = $HOST
+        - metavariable-type:
+            metavariable: $T
+            type: "*tls.Config"
       - pattern: |
           tls.Config{..., ServerName: $HOST, ...}
-      - pattern: |
-          ($CK : *http.Cookie).Domain = $HOST
+      - patterns:
+        - pattern: $CK.Domain = $HOST
+        - metavariable-type:
+            metavariable: $CK
+            type: "*http.Cookie"
       - pattern: |
           http.Cookie{..., Domain: $HOST, ...}
       # gRPC dial.
@@ -187,7 +260,7 @@ rules:
   # accepted as a lenient barrier (it reduces FP volume on widely-used
   # real-world callers) but is incomplete for the multi-dot variant.
   pattern-sanitizers:
-  - by-side-effect: only
+  - by-side-effect: true
     requires: POST_IDNA
     patterns:
     - pattern-either:
