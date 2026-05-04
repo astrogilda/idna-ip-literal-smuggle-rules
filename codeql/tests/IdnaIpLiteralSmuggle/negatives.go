@@ -118,3 +118,87 @@ func compliantResolverLookupIPAddr() {
 	r := &net.Resolver{}
 	r.LookupIPAddr(context.Background(), ace) // OK: post-IDNA recheck barrier
 }
+
+// Compliant: post-IDNA TrimRight + netip.ParseAddr recheck. The canonical
+// strict pattern combining the multi-trailing-dot trim with the modern
+// netip parser. This must NOT alert.
+func compliantTrimRightNetipParseAddr() {
+	host := os.Getenv("HOST_TRIMRIGHT_NETIP_OK") // $ Source
+	ace, err := idna.Lookup.ToASCII(host)
+	if err != nil {
+		return
+	}
+	candidate := strings.TrimRight(ace, ".")
+	if _, parseErr := netip.ParseAddr(candidate); parseErr == nil {
+		return
+	}
+	http.Get("https://" + ace + "/") // OK: post-IDNA recheck barrier
+}
+
+// Compliant: post-IDNA TrimSuffix + netip.ParseAddr. The lenient
+// single-trailing-dot pattern, accepted by the rule per shape (b) in the
+// module docstring. This must NOT alert.
+func compliantTrimSuffixNetipParseAddr() {
+	host := os.Getenv("HOST_TRIMSUFFIX_NETIP_OK") // $ Source
+	ace, err := idna.Lookup.ToASCII(host)
+	if err != nil {
+		return
+	}
+	candidate := strings.TrimSuffix(ace, ".")
+	if _, parseErr := netip.ParseAddr(candidate); parseErr == nil {
+		return
+	}
+	net.JoinHostPort(ace, "443") // OK: post-IDNA recheck barrier
+}
+
+// Compliant: manual slice form of the trim per shape (c) in the module
+// docstring: `if strings.HasSuffix(out, ".") { out = out[:len(out)-1] }`
+// followed by net.ParseIP. This must NOT alert.
+func compliantManualSliceParseIP() {
+	host := os.Getenv("HOST_MANUAL_SLICE_OK") // $ Source
+	ace, err := idna.Lookup.ToASCII(host)
+	if err != nil {
+		return
+	}
+	out := ace
+	if strings.HasSuffix(out, ".") {
+		out = out[:len(out)-1]
+	}
+	if ip := net.ParseIP(out); ip != nil {
+		return
+	}
+	net.JoinHostPort(ace, "443") // OK: post-IDNA recheck barrier
+}
+
+// AdversarialWitnessBinding mixes an unrelated TrimRight + ParseIP
+// construct in the same scope as an IDNA-tainted path. The pre-fix
+// predicate would silently sanitize the IDNA path because some-trim
+// flowed-to-some-ParseIP existed in scope. The post-fix predicate ties
+// the trim source to the post-IDNA tainted predecessor and correctly
+// fires the alert.
+//
+// Expected: this function SHOULD trigger an alert on the JoinHostPort
+// line. The negatives-fixture name is misleading; this is technically a
+// positive test for the witness-binding fix. Placed here for proximity
+// to the bug shape it regresses against.
+//
+// This is the canonical regression test for the v0.1.0 witness-binding
+// fix: pre-fix predicate would NOT alert; post-fix predicate WILL alert.
+func AdversarialWitnessBinding(otherInput string) string {
+	host := os.Getenv("HOST_ADVERSARIAL") // $ Source
+
+	// Unrelated trim + ParseIP elsewhere in the same scope. The pre-fix
+	// predicate matched any-trim-to-any-ParseIP and treated this as a
+	// sanitizer on the IDNA path below. It is not.
+	unrelated := strings.TrimRight(otherInput, ".")
+	if ip := net.ParseIP(unrelated); ip != nil {
+		return "rejected unrelated"
+	}
+
+	// IDNA-tainted path with no post-IDNA recheck. Must alert.
+	ace, err := idna.Lookup.ToASCII(host)
+	if err != nil {
+		return ""
+	}
+	return net.JoinHostPort(ace, "443") // $ Alert
+}

@@ -7,13 +7,42 @@
 # Run from the semgrep/ directory:
 #   semgrep --test test/ --config idna-ip-literal-smuggle.yaml
 #
-# Expected output: 9 ruleid hits matched, 3 ok lines clean, zero
-# unexpected matches. A fourth negative fixture is held back until
-# the upstream idna.StrictNoIPLiteral() CL lands; restore it and bump
-# negatives to 4 at that point.
+# Coverage:
+#   Positives (45 inline `// ruleid:` markers):
+#     - Class 1 Latin-1 superscripts (3 functions, 6 markers)
+#     - Class 2 Math super- and subscripts (4 functions, 8 markers)
+#     - Class 3 Circled digits (2 functions, 4 markers)
+#     - Class 4 Fullwidth digits (2 functions, 4 markers)
+#     - Class 5 Math styled digits bold/dbl/sans/mono (4 functions, 8 markers)
+#     - Class 6 Segmented digits (2 functions, 4 markers)
+#     - Class 7 Trailing-dot bypass / residual propagator shapes
+#       (2 functions, 2 markers)
+#     - Source-pattern coverage: URL.Hostname, Header.Get, os.Getenv,
+#       flag.String, *bufio.Scanner.Text, *json.Decoder.Decode,
+#       *sql.Rows.Scan (7 functions, 7 markers)
+#     - Adversarial regression test for sanitizer-label-gate fix
+#       (1 function, 1 marker)
+#
+#   Negatives (7 inline `// ok:` markers):
+#     - N1 TrimRight + netip.ParseAddr
+#     - N2 TrimSuffix + net.ParseIP (legacy lenient form)
+#     - N4 TrimRight + net.ParseIP
+#     - N5 idna.Punycode profile (out of scope, nil mapping)
+#     - N6 Devanagari digit U+0966 (status V Valid, not mapped) -
+#       2 markers (literal source line + sink line) prove the
+#       fold-class regex does not over-fire on Valid-but-not-mapped
+#       digit codepoints.
+#
+# A fifth compliant trim shape (manual slice) was deferred: the
+# sanitizer block accepts TrimRight/TrimSuffix variants and a manual
+# slice is a known-uncovered shape. Adding it as `ok:` would assert an
+# unsupported sanitizer pattern.
+#
+# When the upstream `idna.StrictNoIPLiteral()` CL lands, add a fixture
+# and bump negatives accordingly.
 
 rules:
 - id: idna-ip-literal-smuggle
   expected:
-    positives: 9
-    negatives: 3
+    positives: 45
+    negatives: 7

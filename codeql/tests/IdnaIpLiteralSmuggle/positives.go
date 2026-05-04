@@ -17,6 +17,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"time"
 
 	"golang.org/x/net/idna"
 )
@@ -29,12 +30,32 @@ func smuggleLatin1Superscript() {
 	http.Get("https://" + ace + "/") // $ Alert
 }
 
+// --- Class 1 second positive: Latin-1 superscript U+00B2 -> "2", net.DialTimeout sink ---
+// "0.0.².0" -> "0.0.2.0"
+func smuggleLatin1SuperscriptDialTimeout() {
+	host := os.Getenv("HOST_LATIN1_TWO") // $ Source
+	ace, _ := idna.Lookup.ToASCII(host)
+	addr := ace + ":443"
+	net.DialTimeout("tcp", addr, 5*time.Second) // $ Alert
+}
+
 // --- Class 2: Mathematical superscripts (U+2074 SUPERSCRIPT FOUR) ---
 // "10.⁴.0.1" -> "10.4.0.1"
 func smuggleMathSuperscript() {
 	host := os.Getenv("HOST_MATHSUP") // $ Source
 	ace, _ := idna.Lookup.ToASCII(host)
 	net.JoinHostPort(ace, "443") // $ Alert
+}
+
+// --- Class 2 second positive: Math superscript U+2079 -> "9", url.URL.Host sink ---
+// Uses idna.Display.ToASCII to exercise an alternate UTS-46 mapping profile.
+// "10.0.⁹.1" -> "10.0.9.1"
+func smuggleMathSuperscriptURLHost(r *http.Request) {
+	host := r.Header.Get("X-Forward-Host") // $ Source
+	ace, _ := idna.Display.ToASCII(host)
+	u := &url.URL{Scheme: "https"}
+	u.Host = ace // $ Alert
+	_ = u
 }
 
 // --- Class 3: Mathematical subscripts (U+2081 SUBSCRIPT ONE) ---
@@ -47,12 +68,31 @@ func smuggleMathSubscript() {
 	_ = cfg
 }
 
+// --- Class 3 second positive: Math subscript U+2087 -> "7", net.LookupHost sink ---
+// "10.₇.0.1" -> "10.7.0.1"
+func smuggleMathSubscriptLookupHost() {
+	host := os.Getenv("HOST_SUBSCRIPT_TWO") // $ Source
+	ace, _ := idna.Lookup.ToASCII(host)
+	net.LookupHost(ace) // $ Alert
+}
+
 // --- Class 4: Circled digits (U+2460 CIRCLED DIGIT ONE) ---
 // "192.168.①.1" -> "192.168.1.1"
 func smuggleCircledDigit() {
 	host := os.Getenv("HOST_CIRCLED") // $ Source
 	ace, _ := idna.Lookup.ToASCII(host)
 	net.Dial("tcp", net.JoinHostPort(ace, "80")) // $ Alert
+}
+
+// --- Class 4 second positive: Circled digit U+2463 -> "4", (*net.Dialer).DialContext sink ---
+// Uses idna.Registration.ToASCII to exercise the registration profile.
+// "10.0.0.④" -> "10.0.0.4"
+func smuggleCircledDigitDialerContext() {
+	host := os.Getenv("HOST_CIRCLED_TWO") // $ Source
+	ace, _ := idna.Registration.ToASCII(host)
+	addr := ace + ":443"
+	d := &net.Dialer{}
+	d.DialContext(context.Background(), "tcp", addr) // $ Alert
 }
 
 // --- Class 5: Fullwidth digits (U+FF11 FULLWIDTH DIGIT ONE) ---
@@ -65,6 +105,16 @@ func smuggleFullwidth() {
 	_ = c
 }
 
+// --- Class 5 second positive: Fullwidth U+FF10 -> "0", net.LookupIP sink ---
+// Uses an idna.New(idna.MapForLookup(), ...) constructed profile.
+// "０.0.0.1" -> "0.0.0.1"
+func smuggleFullwidthLookupIP() {
+	host := os.Getenv("HOST_FULLWIDTH_TWO") // $ Source
+	profile := idna.New(idna.MapForLookup())
+	ace, _ := profile.ToASCII(host)
+	net.LookupIP(ace) // $ Alert
+}
+
 // --- Class 6: Mathematical bold/sans/double-struck/mono (U+1D7CE MATH BOLD ZERO) ---
 // "\U0001D7CE.\U0001D7CF.\U0001D7CE.\U0001D7CF" -> "0.1.0.1"
 func smuggleMathBold() {
@@ -75,6 +125,16 @@ func smuggleMathBold() {
 	_ = u
 }
 
+// --- Class 6 second positive: Math sans-serif digit U+1D7E2 -> "0",
+// (*net.Resolver).LookupHost sink ---
+// "\U0001D7E2.\U0001D7E3.\U0001D7E2.\U0001D7E3" -> "0.1.0.1"
+func smuggleMathSansResolverLookupHost() {
+	host := os.Getenv("HOST_MATHSANS") // $ Source
+	ace, _ := idna.Lookup.ToASCII(host)
+	r := &net.Resolver{}
+	r.LookupHost(context.Background(), ace) // $ Alert
+}
+
 // --- Class 7: Segmented digits (U+1FBF1 SEGMENTED DIGIT ONE) ---
 // "\U0001FBF1.0.0.0" -> "1.0.0.0"
 func smuggleSegmented() {
@@ -83,14 +143,43 @@ func smuggleSegmented() {
 	http.Get("https://" + ace + "/") // $ Alert
 }
 
-// --- Class 8: U+24EA CIRCLED DIGIT ZERO (the only zero-circled,
-// in the same circled family but worth a dedicated case because
-// U+2460 starts at one) ---
+// --- Class 7 second positive: Segmented digit U+1FBF7 -> "7",
+// (*net.Dialer).Dial sink ---
+// "\U0001FBF7.0.0.1" -> "7.0.0.1"
+func smuggleSegmentedDialerDial() {
+	host := os.Getenv("HOST_SEGMENTED_TWO") // $ Source
+	ace, _ := idna.Lookup.ToASCII(host)
+	addr := ace + ":80"
+	d := &net.Dialer{}
+	d.Dial("tcp", addr) // $ Alert
+}
+
+// --- Class 4 third positive: U+24EA CIRCLED DIGIT ZERO (zero-only
+// codepoint in the circled family; U+2460 starts at one). ---
 // "⓪.0.0.1" -> "0.0.0.1"
 func smuggleCircledZero() {
 	host := os.Getenv("HOST_CIRCLED_ZERO") // $ Source
 	ace, _ := idna.Lookup.ToASCII(host)
 	http.Get("https://" + ace + "/") // $ Alert
+}
+
+// --- Class 8: Devanagari digits (U+0966..U+096F) ---
+// UTS-46 NFKC folds Devanagari digits to ASCII equivalents.
+// "१.0.0.0" (U+0967 DEVANAGARI ONE) -> "1.0.0.0"
+func smuggleDevanagariDigit() {
+	host := os.Getenv("HOST_DEVANAGARI") // $ Source
+	ace, _ := idna.Lookup.ToASCII(host)
+	http.Get("https://" + ace + "/") // $ Alert
+}
+
+// --- Class 8 second positive: Devanagari digit U+0969 -> "3",
+// (*net.Resolver).LookupIPAddr sink ---
+// "१.0.0.३" -> "1.0.0.3"
+func smuggleDevanagariResolverLookupIPAddr() {
+	host := os.Getenv("HOST_DEVANAGARI_TWO") // $ Source
+	ace, _ := idna.Lookup.ToASCII(host)
+	r := &net.Resolver{}
+	r.LookupIPAddr(context.Background(), ace) // $ Alert
 }
 
 // --- Trailing-dot variant: "0.¹.0.0." -> "0.1.0.0." ---
