@@ -1,0 +1,19 @@
+# Semgrep test harness manifest.
+#
+# `semgrep --test` reads sibling .go and .yaml files paired by basename.
+# This YAML is intentionally minimal because the assertions live as
+# `// ruleid:` and `// ok:` comments inline in the .go file.
+#
+# Run from the semgrep/ directory:
+#   semgrep --test test/ --config idna-ip-literal-smuggle.yaml
+#
+# Expected output: 9 ruleid hits matched, 3 ok lines clean, zero
+# unexpected matches. A fourth negative fixture is held back until
+# the upstream idna.StrictNoIPLiteral() CL lands; restore it and bump
+# negatives to 4 at that point.
+
+rules:
+- id: idna-ip-literal-smuggle
+  expected:
+    positives: 9
+    negatives: 3

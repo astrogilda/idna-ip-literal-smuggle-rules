@@ -1,0 +1,284 @@
+rules:
+- id: idna-ip-literal-smuggle
+  message: >-
+    Untrusted hostname passes through golang.org/x/net/idna UTS-46
+    ToASCII mapping and then reaches a network destination with no
+    post-mapping IP-literal recheck. UTS-46 NFKC mapping folds 100
+    non-ASCII codepoints across 8 classes (Latin-1 superscripts,
+    mathematical super- and subscripts, circled digits, fullwidth
+    digits, mathematical styled digits, segmented digits) to ASCII
+    digits 0-9. An input like "0.¹.0.0" passes a pre-IDNA
+    `net.ParseIP` check because it is not ASCII, gets mapped to
+    "0.1.0.0" by ToASCII, and reaches a network sink as if it were a
+    DNS name. The result is SSRF against link-local, RFC 1918,
+    loopback, or cloud metadata ranges.
+
+    Fix: after the IDNA call, trim trailing dots with
+    `strings.TrimRight(host, ".")` (not `TrimSuffix`, because UTS-46
+    mapping can produce multiple trailing ASCII dots when fullwidth or
+    ideographic dot characters compose with ASCII dots, and TrimSuffix
+    strips only one) and recheck with `netip.ParseAddr` (preferred, Go
+    1.18+) or `net.ParseIP`. The trim is required:
+    `idna.Lookup.ToASCII("0.¹.0.0.")` returns "0.1.0.0.", which
+    `net.ParseIP` rejects on its own, so a recheck without the trim
+    silently passes the smuggle through. If the parse succeeds, reject
+    the input. The digit-fold layer turned it into an IP literal.
+
+    Example of a vulnerable caller:
+    golang.org/x/net/http/httpproxy canonicalAddr.
+
+  languages: [go]
+  # Severity is intentionally unset. The advisory defers CVSS
+  # calibration to the Go security team; the Semgrep registry can
+  # calibrate downstream.
+  mode: taint
+  options:
+    interfile: true
+    taint_assume_safe_functions: false
+
+  pattern-sources:
+  # Label PRE_IDNA: untrusted hostname inputs.
+  - label: PRE_IDNA
+    patterns:
+    - pattern-either:
+      # HTTP request fields commonly carrying user-supplied hostnames.
+      - pattern: |
+          ($REQ : *http.Request).Host
+      - pattern: |
+          ($REQ : *http.Request).URL.Host
+      - pattern: |
+          ($REQ : *http.Request).URL.Hostname()
+      - pattern: |
+          ($URL : *url.URL).Host
+      - pattern: |
+          ($URL : *url.URL).Hostname()
+      # Process inputs.
+      - pattern: os.Getenv($_)
+      - pattern: os.Args[$_]
+      # Common user-input plumbing through query and form values.
+      - pattern: |
+          ($REQ : *http.Request).URL.Query().Get($_)
+      - pattern: |
+          ($REQ : *http.Request).FormValue($_)
+      - pattern: |
+          ($REQ : *http.Request).PostFormValue($_)
+      # Decoded JSON / generic config strings reaching a "host" / "endpoint" field.
+      - patterns:
+        - pattern: $X.$FIELD
+        - metavariable-regex:
+            metavariable: $FIELD
+            regex: ^(Host|Hostname|Endpoint|Server|Address|Addr|Target|Upstream|Origin)$
+
+  # A hardcoded fold-class codepoint flowing into ToASCII is high
+  # confidence regardless of taint origin.
+  - label: PRE_IDNA
+    patterns:
+    - pattern: $X
+    - metavariable-regex:
+        metavariable: $X
+        # 100-codepoint UTS-46 NFKC digit-fold catalogue, derived by
+        # enumerating the Unicode 16 table shipped with x/text v0.21.0.
+        # Classes (counts):
+        #   Latin-1 superscripts U+00B2/B3/B9                              (3)
+        #   Math superscripts    U+2070, U+2074-U+2079                     (7)
+        #   Math subscripts      U+2080-U+2089                            (10)
+        #   Circled digits       U+2460-U+2468, U+24EA                    (10)
+        #   Fullwidth digits     U+FF10-U+FF19                            (10)
+        #   Math styled digits   U+1D7CE-U+1D7FF (bold/dbl/sans/mono)     (50)
+        #   Segmented digits     U+1FBF0-U+1FBF9                          (10)
+        # Excluded (status V Valid, not mapped): Arabic-Indic U+0660-0669,
+        # Extended Arabic-Indic U+06F0-06F9, Devanagari U+0966-096F.
+        regex: '"[^"]*[\x{00B2}\x{00B3}\x{00B9}\x{2070}\x{2074}-\x{2079}\x{2080}-\x{2089}\x{2460}-\x{2468}\x{24EA}\x{FF10}-\x{FF19}\x{1D7CE}-\x{1D7FF}\x{1FBF0}-\x{1FBF9}][^"]*"'
+
+  # Propagator: PRE_IDNA reaches a ToASCII call -> output is POST_IDNA.
+  pattern-propagators:
+  - patterns:
+    - pattern-either:
+      - pattern: idna.Lookup.ToASCII($IN)
+      - pattern: idna.Display.ToASCII($IN)
+      - pattern: idna.Registration.ToASCII($IN)
+      - pattern: idna.Punycode.ToASCII($IN)   # The punycode profile is benign on bytes
+                                              # but we still propagate to catch double-call shapes.
+      - pattern: idna.New(...).ToASCII($IN)
+      - pattern: ($P : *idna.Profile).ToASCII($IN)
+      - pattern: idna.ToASCII($IN)
+    from: $IN
+    to: $RESULT
+    label: POST_IDNA
+    requires: PRE_IDNA
+
+  pattern-sinks:
+  - requires: POST_IDNA
+    patterns:
+    - pattern-either:
+      # Direct dial / resolution.
+      - pattern: net.JoinHostPort($HOST, $_)
+      - pattern: net.Dial($_, $HOST)
+      - pattern: net.DialTimeout($_, $HOST, $_)
+      - pattern: |
+          ($D : *net.Dialer).Dial($_, $HOST)
+      - pattern: |
+          ($D : *net.Dialer).DialContext($_, $_, $HOST)
+      - pattern: net.LookupHost($HOST)
+      - pattern: net.LookupIP($HOST)
+      - pattern: |
+          ($R : *net.Resolver).LookupHost($_, $HOST)
+      - pattern: |
+          ($R : *net.Resolver).LookupIPAddr($_, $HOST)
+      # http.Client convenience methods (host is embedded in the URL string).
+      - pattern: http.Get($HOST)
+      - pattern: http.Head($HOST)
+      - pattern: http.Post($HOST, $_, $_)
+      - pattern: http.PostForm($HOST, $_)
+      - pattern: |
+          ($C : *http.Client).Get($HOST)
+      - pattern: |
+          ($C : *http.Client).Head($HOST)
+      - pattern: |
+          ($C : *http.Client).Post($HOST, $_, $_)
+      - pattern: |
+          ($C : *http.Client).PostForm($HOST, $_)
+      - pattern: http.NewRequest($_, $HOST, $_)
+      - pattern: http.NewRequestWithContext($_, $_, $HOST, $_)
+      # URL / TLS / cookie field assignments.
+      - pattern: |
+          ($U : *url.URL).Host = $HOST
+      - pattern: |
+          url.URL{..., Host: $HOST, ...}
+      - pattern: |
+          ($T : *tls.Config).ServerName = $HOST
+      - pattern: |
+          tls.Config{..., ServerName: $HOST, ...}
+      - pattern: |
+          ($CK : *http.Cookie).Domain = $HOST
+      - pattern: |
+          http.Cookie{..., Domain: $HOST, ...}
+      # gRPC dial.
+      - pattern: grpc.Dial($HOST, ...)
+      - pattern: grpc.DialContext($_, $HOST, ...)
+      - pattern: grpc.NewClient($HOST, ...)
+    focus-metavariable: $HOST
+
+  # Sanitizer: post-IDNA recheck only counts if a trailing-dot trim
+  # ran first. Without the trim, "0.¹.0.0." maps to "0.1.0.0." and
+  # both net.ParseIP and netip.ParseAddr reject it, so the recheck
+  # passes and the smuggle survives.
+  #
+  # TrimRight (preferred) handles the multi-trailing-dot variants that
+  # UTS-46 mapping produces when fullwidth (U+FF0E) or ideographic
+  # (U+3002) dot characters compose with ASCII dots. TrimSuffix is
+  # accepted as a lenient barrier (it reduces FP volume on widely-used
+  # real-world callers) but is incomplete for the multi-dot variant.
+  pattern-sanitizers:
+  - by-side-effect: only
+    patterns:
+    - pattern-either:
+      # Modern: netip.ParseAddr with prior TrimRight or TrimSuffix.
+      - pattern: |
+          $H = strings.TrimRight($H, ".")
+          ...
+          if _, $ERR := netip.ParseAddr($H); $ERR == nil {
+            ...
+          }
+      - pattern: |
+          $H = strings.TrimRight($H, ".")
+          ...
+          if $ADDR, $ERR := netip.ParseAddr($H); $ERR == nil {
+            ...
+          }
+      - pattern: |
+          $H = strings.TrimSuffix($H, ".")
+          ...
+          if _, $ERR := netip.ParseAddr($H); $ERR == nil {
+            ...
+          }
+      - pattern: |
+          $H = strings.TrimSuffix($H, ".")
+          ...
+          if $ADDR, $ERR := netip.ParseAddr($H); $ERR == nil {
+            ...
+          }
+      # Legacy: net.ParseIP with prior TrimRight or TrimSuffix.
+      - pattern: |
+          $H = strings.TrimRight($H, ".")
+          ...
+          if net.ParseIP($H) != nil {
+            ...
+          }
+      - pattern: |
+          $H = strings.TrimSuffix($H, ".")
+          ...
+          if net.ParseIP($H) != nil {
+            ...
+          }
+      # Fresh-variable form. Matches the inline pattern, e.g.
+      # `if _, err := netip.ParseAddr(strings.TrimRight(out, ".")); err == nil`.
+      - pattern: |
+          $T := strings.TrimRight($H, ".")
+          ...
+          if net.ParseIP($T) != nil {
+            ...
+          }
+      - pattern: |
+          $T := strings.TrimSuffix($H, ".")
+          ...
+          if net.ParseIP($T) != nil {
+            ...
+          }
+      - pattern: |
+          $T := strings.TrimRight($H, ".")
+          ...
+          if _, $ERR := netip.ParseAddr($T); $ERR == nil {
+            ...
+          }
+      - pattern: |
+          $T := strings.TrimSuffix($H, ".")
+          ...
+          if _, $ERR := netip.ParseAddr($T); $ERR == nil {
+            ...
+          }
+      - pattern: |
+          if _, $ERR := netip.ParseAddr(strings.TrimRight($H, ".")); $ERR == nil {
+            ...
+          }
+      - pattern: |
+          if net.ParseIP(strings.TrimRight($H, ".")) != nil {
+            ...
+          }
+
+  # Opt-out: punycode-only profile (no NFKC mapping, no smuggle surface).
+  # Note: `idna.StrictNoIPLiteral()` is a proposed upstream Option that
+  # has not yet landed in golang.org/x/net/idna. When it ships, add a
+  # sanitizer pattern matching
+  # `idna.New(..., idna.StrictNoIPLiteral(), ...)`
+  # to recognise callers that opt in.
+  - patterns:
+    - pattern-either:
+      - pattern: idna.Punycode.ToASCII($_)
+
+  metadata:
+    cwe:
+    - "CWE-20: Improper Input Validation"
+    - "CWE-918: Server-Side Request Forgery (SSRF)"
+    - "CWE-176: Improper Handling of Unicode Encoding"
+    owasp:
+    - A10:2021 - Server-Side Request Forgery (SSRF)
+    - A03:2021 - Injection
+    references:
+    - https://www.unicode.org/reports/tr46/
+    - https://pkg.go.dev/golang.org/x/net/idna
+    - https://nvd.nist.gov/vuln/detail/CVE-2021-29923
+    - https://github.com/golang/go/issues/29098
+    category: security
+    technology:
+    - go
+    - net
+    - http
+    # confidence/likelihood/impact intentionally unset. The advisory
+    # defers to the Go security team; the Semgrep registry can
+    # calibrate downstream.
+    subcategory:
+    - vuln
+    vulnerability_class:
+    - SSRF
+    interfile: true
