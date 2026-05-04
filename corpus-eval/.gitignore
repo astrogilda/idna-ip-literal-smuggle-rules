@@ -1,0 +1,5 @@
+# Per-run Semgrep outputs are large and not reproducible across versions.
+# We commit SUMMARY.md and triage/ markdown but not the raw JSON / JSONL.
+results/*.json
+results/*.raw.json
+!results/SUMMARY.md
