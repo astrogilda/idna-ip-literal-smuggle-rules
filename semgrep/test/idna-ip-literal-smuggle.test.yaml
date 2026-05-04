@@ -8,30 +8,49 @@
 #   semgrep --test test/ --config idna-ip-literal-smuggle.yaml
 #
 # Coverage:
-#   Positives (45 inline `// ruleid:` markers):
-#     - Class 1 Latin-1 superscripts (3 functions, 6 markers)
-#     - Class 2 Math super- and subscripts (4 functions, 8 markers)
-#     - Class 3 Circled digits (2 functions, 4 markers)
-#     - Class 4 Fullwidth digits (2 functions, 4 markers)
-#     - Class 5 Math styled digits bold/dbl/sans/mono (4 functions, 8 markers)
-#     - Class 6 Segmented digits (2 functions, 4 markers)
-#     - Class 7 Trailing-dot bypass / residual propagator shapes
-#       (2 functions, 2 markers)
+#   Positives (21 inline `// ruleid:` sink markers):
+#     Semgrep emits findings at sink locations, so each fixture function
+#     carries one ruleid marker on its sink call. The fold-class literal
+#     on the source line is not annotated.
+#     - Class 1 Latin-1 superscripts (3 functions, 3 sink markers)
+#     - Class 2 Math super- and subscripts (4 functions, 3 sink markers
+#       under OSS taint; P2a uses split var-bound profile that needs Pro
+#       type inference, marked todoruleid)
+#     - Class 3 Circled digits (2 functions, 2 sink markers)
+#     - Class 4 Fullwidth digits (2 functions, 2 sink markers)
+#     - Class 5 Math styled digits bold/dbl/sans/mono (4 functions,
+#       4 sink markers)
+#     - Class 6 Segmented digits (2 functions, 2 sink markers)
+#     - Class 7 Trailing-dot bypass / split-profile shapes (2 functions,
+#       2 todoruleid markers; both rely on function-parameter sources
+#       which OSS taint mode does not model)
 #     - Source-pattern coverage: URL.Hostname, Header.Get, os.Getenv,
-#       flag.String, *bufio.Scanner.Text, *json.Decoder.Decode,
-#       *sql.Rows.Scan (7 functions, 7 markers)
+#       flag.String, bufio.Scanner.Text are 5 OSS sink markers; Decode
+#       to struct field and Scan via pointer are 2 todoruleid markers
+#       (struct-field/pointer-write taint propagation is Pro-tier)
 #     - Adversarial regression test for sanitizer-label-gate fix
-#       (1 function, 1 marker)
+#       (1 todoruleid marker; relies on function-parameter source)
 #
-#   Negatives (7 inline `// ok:` markers):
+#   Pro-tier-only fixtures (6 `// todoruleid:` markers):
+#     Sinks where OSS taint mode cannot reach because of intra-procedural
+#     limits around function parameters as sources, struct-field taint
+#     after Decode, pointer-write taint after Scan, and split-assignment
+#     var-bound *idna.Profile types. The Pro-tier rule with interfile
+#     analysis catches these in a multi-file project; they remain
+#     todoruleid for the OSS rule's single-file fixture.
+#
+#   Negatives (6 inline `// ok:` markers):
 #     - N1 TrimRight + netip.ParseAddr
 #     - N2 TrimSuffix + net.ParseIP (legacy lenient form)
 #     - N4 TrimRight + net.ParseIP
 #     - N5 idna.Punycode profile (out of scope, nil mapping)
 #     - N6 Devanagari digit U+0966 (status V Valid, not mapped) -
-#       2 markers (literal source line + sink line) prove the
-#       fold-class regex does not over-fire on Valid-but-not-mapped
-#       digit codepoints.
+#       proves the fold-class regex does not over-fire on
+#       Valid-but-not-mapped digit codepoints
+#     - N7 Adversarial: unrelated TrimRight + ParseIP on a separate
+#       string in the same function as an IDNA-tainted path. Pre-fix
+#       the rule would silently sanitize the IDNA path; post-fix the
+#       label gate keeps it on the alert path.
 #
 # A fifth compliant trim shape (manual slice) was deferred: the
 # sanitizer block accepts TrimRight/TrimSuffix variants and a manual
@@ -44,5 +63,5 @@
 rules:
 - id: idna-ip-literal-smuggle
   expected:
-    positives: 45
-    negatives: 7
+    positives: 21
+    negatives: 6

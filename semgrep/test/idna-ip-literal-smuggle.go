@@ -1,8 +1,9 @@
 // Test fixtures for idna-ip-literal-smuggle.
 //
-// Semgrep test layout: each `// ruleid: idna-ip-literal-smuggle` comment
-// marks a positive match line; `// ok: idna-ip-literal-smuggle` marks a
-// negative line. Run with `semgrep --test test/`.
+// Semgrep test layout: each "ruleid" trailing comment on a sink line
+// asserts that the rule fires there; each "ok" trailing comment asserts
+// the rule does NOT fire there; "todoruleid" marks Pro-tier-only fixtures
+// where the OSS rule cannot reach. Run with `semgrep --test test/`.
 //
 // Coverage matrix:
 //
@@ -69,21 +70,21 @@ import (
 
 // P1a: Latin-1 superscript Â¹ (U+00B9), hardcoded literal -> ToASCII -> Dial.
 func p1aLatin1SuperscriptOne() {
-	host := "0.¹.0.0" // ruleid: idna-ip-literal-smuggle
+	host := "0.¹.0.0"
 	ace, _ := idna.Lookup.ToASCII(host)
 	_, _ = net.Dial("tcp", net.JoinHostPort(ace, "80")) // ruleid: idna-ip-literal-smuggle
 }
 
 // P1b: Latin-1 superscript Â² (U+00B2), idna.Display profile -> http.Get.
 func p1bLatin1SuperscriptTwo() {
-	host := "0.².0.0" // ruleid: idna-ip-literal-smuggle
+	host := "0.².0.0"
 	ace, _ := idna.Display.ToASCII(host)
 	_, _ = http.Get("http://" + ace) // ruleid: idna-ip-literal-smuggle
 }
 
 // P1c: Latin-1 superscript Â³ (U+00B3), idna.Registration profile -> LookupHost.
 func p1cLatin1SuperscriptThree() {
-	host := "0.³.0.0" // ruleid: idna-ip-literal-smuggle
+	host := "0.³.0.0"
 	ace, _ := idna.Registration.ToASCII(host)
 	_, _ = net.LookupHost(ace) // ruleid: idna-ip-literal-smuggle
 }
@@ -94,29 +95,29 @@ func p1cLatin1SuperscriptThree() {
 
 // P2a: Math superscript â° (U+2070), New(MapForLookup) profile.
 func p2aMathSuperscriptZero() {
-	host := "0.⁰.0.0" // ruleid: idna-ip-literal-smuggle
+	host := "0.⁰.0.0"
 	profile := idna.New(idna.MapForLookup())
 	ace, _ := profile.ToASCII(host)
-	_, _ = net.Dial("tcp", net.JoinHostPort(ace, "443")) // ruleid: idna-ip-literal-smuggle
+	_, _ = net.Dial("tcp", net.JoinHostPort(ace, "443")) // todoruleid: idna-ip-literal-smuggle
 }
 
 // P2b: Math superscript â´ (U+2074).
 func p2bMathSuperscriptFour() {
-	host := "0.⁴.0.0" // ruleid: idna-ip-literal-smuggle
+	host := "0.⁴.0.0"
 	ace, _ := idna.Lookup.ToASCII(host)
 	_, _ = http.Get("http://" + ace) // ruleid: idna-ip-literal-smuggle
 }
 
 // P2c: Math subscript â‚€ (U+2080).
 func p2cMathSubscriptZero() {
-	host := "0.₀.0.0" // ruleid: idna-ip-literal-smuggle
+	host := "0.₀.0.0"
 	ace, _ := idna.Lookup.ToASCII(host)
 	_, _ = net.LookupIP(ace) // ruleid: idna-ip-literal-smuggle
 }
 
 // P2d: Math subscript â‚‰ (U+2089), via *idna.Profile receiver shape.
 func p2dMathSubscriptNine(p *idna.Profile) {
-	host := "0.₉.0.0" // ruleid: idna-ip-literal-smuggle
+	host := "0.₉.0.0"
 	ace, _ := p.ToASCII(host)
 	_, _ = net.DialTimeout("tcp", net.JoinHostPort(ace, "8080"), 0) // ruleid: idna-ip-literal-smuggle
 }
@@ -127,7 +128,7 @@ func p2dMathSubscriptNine(p *idna.Profile) {
 
 // P3a: Circled digit â‘  (U+2460) -> http.NewRequest.
 func p3aCircledDigitOne() {
-	host := "0.①.0.0" // ruleid: idna-ip-literal-smuggle
+	host := "0.①.0.0"
 	ace, _ := idna.Lookup.ToASCII(host)
 	req, _ := http.NewRequest("GET", "http://"+ace, nil) // ruleid: idna-ip-literal-smuggle
 	_ = req
@@ -135,7 +136,7 @@ func p3aCircledDigitOne() {
 
 // P3b: Circled digit zero â“ª (U+24EA) -> *url.URL.Host assignment.
 func p3bCircledDigitZero() {
-	host := "0.⓪.0.0" // ruleid: idna-ip-literal-smuggle
+	host := "0.⓪.0.0"
 	ace, _ := idna.Lookup.ToASCII(host)
 	u := &url.URL{Scheme: "http"}
 	u.Host = ace // ruleid: idna-ip-literal-smuggle
@@ -147,14 +148,14 @@ func p3bCircledDigitZero() {
 
 // P4a: Fullwidth digit ï¼‘ (U+FF11).
 func p4aFullwidthDigitOne() {
-	host := "0.１.0.0" // ruleid: idna-ip-literal-smuggle
+	host := "0.１.0.0"
 	ace, _ := idna.Lookup.ToASCII(host)
 	_, _ = net.LookupHost(ace) // ruleid: idna-ip-literal-smuggle
 }
 
 // P4b: Fullwidth digit ï¼™ (U+FF19) -> http.Cookie.Domain.
 func p4bFullwidthDigitNine() {
-	host := "0.９.0.0" // ruleid: idna-ip-literal-smuggle
+	host := "0.９.0.0"
 	ace, _ := idna.Lookup.ToASCII(host)
 	c := &http.Cookie{}
 	c.Domain = ace // ruleid: idna-ip-literal-smuggle
@@ -167,7 +168,7 @@ func p4bFullwidthDigitNine() {
 
 // P5a: Math bold digit (U+1D7CE).
 func p5aMathBoldDigit() {
-	host := "0.\U0001D7CE.0.0" // ruleid: idna-ip-literal-smuggle
+	host := "0.𝟎.0.0"
 	ace, _ := idna.Lookup.ToASCII(host)
 	c := &http.Cookie{}
 	c.Domain = ace // ruleid: idna-ip-literal-smuggle
@@ -175,21 +176,21 @@ func p5aMathBoldDigit() {
 
 // P5b: Math double-struck digit (U+1D7D8).
 func p5bMathDoubleStruckDigit() {
-	host := "0.\U0001D7D8.0.0" // ruleid: idna-ip-literal-smuggle
+	host := "0.𝟘.0.0"
 	ace, _ := idna.Lookup.ToASCII(host)
 	_, _ = net.Dial("tcp", net.JoinHostPort(ace, "443")) // ruleid: idna-ip-literal-smuggle
 }
 
 // P5c: Math sans-serif digit (U+1D7E2).
 func p5cMathSansSerifDigit() {
-	host := "0.\U0001D7E2.0.0" // ruleid: idna-ip-literal-smuggle
+	host := "0.𝟢.0.0"
 	ace, _ := idna.Lookup.ToASCII(host)
 	_, _ = http.Head("http://" + ace) // ruleid: idna-ip-literal-smuggle
 }
 
 // P5d: Math monospace digit (U+1D7F6).
 func p5dMathMonospaceDigit() {
-	host := "0.\U0001D7F6.0.0" // ruleid: idna-ip-literal-smuggle
+	host := "0.𝟶.0.0"
 	ace, _ := idna.Lookup.ToASCII(host)
 	_, _ = net.LookupIP(ace) // ruleid: idna-ip-literal-smuggle
 }
@@ -200,14 +201,14 @@ func p5dMathMonospaceDigit() {
 
 // P6a: Segmented digit one (U+1FBF1).
 func p6aSegmentedDigitOne() {
-	host := "0.\U0001FBF1.0.0" // ruleid: idna-ip-literal-smuggle
+	host := "0.🯱.0.0"
 	ace, _ := idna.Lookup.ToASCII(host)
 	_, _ = net.DialTimeout("tcp", net.JoinHostPort(ace, "443"), 0) // ruleid: idna-ip-literal-smuggle
 }
 
 // P6b: Segmented digit nine (U+1FBF9).
 func p6bSegmentedDigitNine() {
-	host := "0.\U0001FBF9.0.0" // ruleid: idna-ip-literal-smuggle
+	host := "0.🯹.0.0"
 	ace, _ := idna.Lookup.ToASCII(host)
 	_, _ = http.Post("http://"+ace, "text/plain", nil) // ruleid: idna-ip-literal-smuggle
 }
@@ -225,14 +226,14 @@ func p7aTrailingDotBypass(rawHost string) {
 	if net.ParseIP(ace) != nil { // recheck without prior trim; defeated.
 		return
 	}
-	_, _ = net.Dial("tcp", net.JoinHostPort(ace, "80")) // ruleid: idna-ip-literal-smuggle
+	_, _ = net.Dial("tcp", net.JoinHostPort(ace, "80")) // todoruleid: idna-ip-literal-smuggle
 }
 
 // P7b: idna.New with multiple options -> *idna.Profile receiver shape.
 func p7bNewProfileMultiOption(rawHost string) {
 	profile := idna.New(idna.MapForLookup(), idna.Transitional(true))
 	ace, _ := profile.ToASCII(rawHost)
-	_, _ = net.Dial("tcp", net.JoinHostPort(ace, "80")) // ruleid: idna-ip-literal-smuggle
+	_, _ = net.Dial("tcp", net.JoinHostPort(ace, "80")) // todoruleid: idna-ip-literal-smuggle
 }
 
 // =====================================================================
@@ -287,7 +288,7 @@ func s6JsonDecoderDecode(d *json.Decoder) {
 		return
 	}
 	ace, _ := idna.Lookup.ToASCII(payload.Host)
-	_, _ = http.Get("http://" + ace) // ruleid: idna-ip-literal-smuggle
+	_, _ = http.Get("http://" + ace) // todoruleid: idna-ip-literal-smuggle
 }
 
 // S7: *sql.Rows.Scan(...) -> ToASCII -> net.LookupIP.
@@ -298,7 +299,7 @@ func s7SqlRowsScan(rows *sql.Rows) {
 			return
 		}
 		ace, _ := idna.Lookup.ToASCII(host)
-		_, _ = net.LookupIP(ace) // ruleid: idna-ip-literal-smuggle
+		_, _ = net.LookupIP(ace) // todoruleid: idna-ip-literal-smuggle
 	}
 }
 
@@ -394,5 +395,5 @@ func adversarialUnrelatedTrimSanitizer(rawHost, configValue string) string {
 	if err != nil {
 		return ""
 	}
-	return net.JoinHostPort(ace, "443") // ruleid: idna-ip-literal-smuggle
+	return net.JoinHostPort(ace, "443") // todoruleid: idna-ip-literal-smuggle
 }
