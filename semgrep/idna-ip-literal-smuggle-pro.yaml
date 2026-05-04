@@ -2,12 +2,15 @@ rules:
 - id: idna-ip-literal-smuggle-pro
   message: >-
     Untrusted hostname passes through golang.org/x/net/idna UTS-46
-    ToASCII mapping and then reaches a network destination with no
-    post-mapping IP-literal recheck. UTS-46 NFKC mapping folds 100
-    non-ASCII codepoints across 8 classes (Latin-1 superscripts,
-    mathematical super- and subscripts, circled digits, fullwidth
-    digits, mathematical styled digits, segmented digits) to ASCII
-    digits 0-9. An input like "0.¹.0.0" passes a pre-IDNA
+    mapping (`ToASCII` or `ToUnicode` on a digit-folding profile) and
+    then reaches a network destination with no post-mapping IP-literal
+    recheck. UTS-46 NFKC mapping folds 100 non-ASCII codepoints from
+    seven Unicode-block ranges (Latin-1 superscripts, mathematical
+    superscripts, mathematical subscripts, circled digits, fullwidth
+    digits, the Mathematical Alphanumeric Symbols block, segmented
+    digits) to ASCII digits 0-9. Devanagari digits (U+0966-096F) are
+    not in scope: the library passes them through Punycode rather than
+    folding them. An input like "0.¹.0.0" passes a pre-IDNA
     `net.ParseIP` check because it is not ASCII, gets mapped to
     "0.1.0.0" by ToASCII, and reaches a network sink as if it were a
     DNS name. The result is SSRF against link-local, RFC 1918,
@@ -24,18 +27,13 @@ rules:
     silently passes the smuggle through. If the parse succeeds, reject
     the input. The digit-fold layer turned it into an IP literal.
 
-    Pattern: callers that apply UTS-46 IDNA mapping to a host string
-    and pass the result to a network sink without rechecking against
-    IP-literal parsers.
-
     Tier note: this rule uses cross-file taint propagation (Semgrep
     Pro). For intra-procedural OSS-tier analysis use
     `idna-ip-literal-smuggle.yaml` instead.
 
-    Tuning: empirical false-positive density on third-party Go code is
-    non-trivial and varies by codebase shape. Operators should plan to
-    extend the sanitizer block with project-local trim helpers that
-    satisfy the post-IDNA recheck contract.
+    Tuning: extend the sanitizer block with any project-local trim
+    helpers that wrap `TrimRight` or `TrimSuffix` so the rule recognises
+    them as part of the post-IDNA recheck contract.
 
   languages: [go]
   severity: WARNING
@@ -157,9 +155,24 @@ rules:
       - pattern: idna.Display.ToASCII(...)
       - pattern: idna.Registration.ToASCII(...)
       - pattern: idna.New(...).ToASCII(...)
-      # Var-bound profile fallback: `p := idna.Lookup; p.ToASCII(s)` and similar.
+      # ToUnicode runs the same UTS-46 validateAndMap pipeline as ToASCII
+      # before the encode-vs-decode branch, so the digit fold happens
+      # regardless of which entry point is called. Empirically verified
+      # against golang.org/x/net/idna v0.53.0: Lookup.ToUnicode("0.¹.0.0")
+      # returns "0.1.0.0".
+      - pattern: idna.Lookup.ToUnicode(...)
+      - pattern: idna.Display.ToUnicode(...)
+      - pattern: idna.Registration.ToUnicode(...)
+      - pattern: idna.New(...).ToUnicode(...)
+      # Var-bound profile fallback covering both entry points:
+      # `p := idna.Lookup; p.ToASCII(s)` / `p.ToUnicode(s)` and similar.
       - patterns:
         - pattern: $P.ToASCII(...)
+        - metavariable-type:
+            metavariable: $P
+            type: "*idna.Profile"
+      - patterns:
+        - pattern: $P.ToUnicode(...)
         - metavariable-type:
             metavariable: $P
             type: "*idna.Profile"

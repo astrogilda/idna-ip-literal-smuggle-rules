@@ -10,11 +10,18 @@ smuggling.
 ## The bug class in one paragraph
 
 `golang.org/x/net/idna` applies UTS-46 NFKC mapping during `(*Profile).ToASCII`
-on the `Lookup` and `MapForLookup` profiles. That mapping folds 100 non-ASCII
-Unicode digit codepoints (across 8 families: Latin-1 superscripts, mathematical
-superscripts and subscripts, circled digits, fullwidth digits, mathematical
-bold / sans-serif / double-struck / monospace digits, and segmented digits) to
-their ASCII equivalents. The library does not check whether the result is an
+and `(*Profile).ToUnicode` on the `Lookup`, `Display`, `Registration`, and
+`MapForLookup`-constructed profiles. That mapping folds 100 non-ASCII Unicode
+digit codepoints to their ASCII equivalents. The 100 codepoints partition
+into seven Unicode-block ranges: Latin-1 superscripts, mathematical
+superscripts, mathematical subscripts, circled digits, fullwidth digits,
+the Mathematical Alphanumeric Symbols block (bold, double-struck,
+sans-serif, sans-serif-bold, and monospace digit styles), and segmented
+digits. Devanagari digits (U+0966..U+096F) are NOT in scope: empirically
+verified against `golang.org/x/net/idna v0.53.0`, they pass through
+Punycode (`xn--*`) on every UTS-46 profile and never fold to ASCII.
+
+The library does not check whether the result is an
 IP literal. A caller that applies UTS-46 mapping to an attacker-controlled
 host string and consumes the result in a network sink without rechecking
 against IP-literal parsers receives a valid ASCII IPv4 literal back as the
@@ -33,7 +40,7 @@ one) passes a pre-IDNA `net.ParseIP` check (it is not ASCII, so it is not an
 IP), goes through `idna.Lookup.ToASCII`, and emerges as `"0.1.0.0"`, the IPv4
 loopback-adjacent literal. The same path works for `"１９２．１６８．１．１"`
 (fullwidth `192.168.1.1`) and any other digit-and-dot combination that uses
-codepoints in the 8 fold families. Trailing dots add a second variant:
+codepoints in the seven fold ranges above. Trailing dots add a second variant:
 `"0.¹.0.0."` maps to `"0.1.0.0."`, which `net.ParseIP` rejects on its own,
 yet is still an IP literal for routing purposes once the trailing dot is
 trimmed.

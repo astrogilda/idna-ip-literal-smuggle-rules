@@ -21,16 +21,24 @@ Author: Sankalp Gilda. License: MIT.
 `idna.Registration`, or any `idna.New(idna.MapForLookup(), ...)` profile)
 runs NFKC compatibility decomposition before producing ASCII output.
 Enumerating the Unicode 16 table shipped with `golang.org/x/text` v0.21.0
-yields 100 codepoints across 8 classes that fold to ASCII digits 0-9. An
-attacker-controlled hostname like `0.¹.0.0` passes a pre-IDNA
-`net.ParseIP` check (it is not ASCII), maps to `0.1.0.0`, and reaches a
-network sink as if it were a DNS name. The result is SSRF against
+yields 100 codepoints partitioned into seven Unicode-block ranges that
+fold to ASCII digits 0-9 (Latin-1 superscripts, mathematical superscripts,
+mathematical subscripts, circled digits, fullwidth digits, the
+Mathematical Alphanumeric Symbols block, and segmented digits).
+Devanagari digits (U+0966..U+096F) are NOT in scope: empirically verified
+against `golang.org/x/net/idna v0.53.0`, they pass through Punycode on
+every UTS-46 profile and do not fold to ASCII. An attacker-controlled
+hostname like `0.¹.0.0` passes a pre-IDNA `net.ParseIP` check (it is not
+ASCII), maps to `0.1.0.0`, and reaches a network sink as if it were a
+DNS name. The result is SSRF against
 loopback, RFC 1918, link-local, or cloud metadata endpoints.
 
 The rule fires when an untrusted hostname (label `PRE_IDNA`) flows
-through any UTS-46 `ToASCII` variant, the mapped result (label
-`POST_IDNA`) reaches a network sink, and the path is not guarded by
-`strings.TrimRight(_, ".") + netip.ParseAddr` (or `net.ParseIP`).
+through any UTS-46 mapping call (`(*Profile).ToASCII` or
+`(*Profile).ToUnicode` on a digit-folding profile), the mapped result
+(label `POST_IDNA`) reaches a network sink, and the path is not
+guarded by `strings.TrimRight(_, ".") + netip.ParseAddr` (or
+`net.ParseIP`).
 `strings.TrimSuffix(_, ".")` is also accepted as a lenient barrier
 (reduces FP volume on widely-used real-world callers) but is incomplete
 for the multi-trailing-dot variant where UTS-46 mapping produces
@@ -45,10 +53,8 @@ predicates, in that order.
 
 ## Verification
 
-This repository ships the rule and fixtures. Verification is left to
-the operator because semgrep is not part of the standard CI image at
-the time these artifacts were generated (`command -v semgrep` returned
-not-installed when checked).
+Run `semgrep --test` against the fixtures, or scan a real Go tree
+directly:
 
 ```bash
 # Install (one-time):
@@ -113,11 +119,11 @@ for new Go security rules is about two business days.
 
 ## Severity calibration
 
-`WARNING`, not `ERROR`. Rationale: the rule's true-positive density on
-third-party Go codebases is roughly 30-50% pre-tuning, based on the
-ecosystem survey in §2.2 of the companion advisory; promoting it to
-`ERROR` would induce alert fatigue. Operators who want a hard gate can
-remap severity in their local Semgrep config.
+`WARNING`, not `ERROR`. The rule fires on a behavioural anti-pattern
+that has legitimate-but-unusual exceptions (callers whose hosts are
+pre-validated from internal configuration sources and never canonicalise
+attacker input). A hard gate would induce alert fatigue. Operators who
+want one can remap severity in their local Semgrep config.
 
 ## Out of scope
 

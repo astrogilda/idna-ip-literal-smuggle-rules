@@ -24,6 +24,9 @@
 #     - Class 7 Trailing-dot bypass / split-profile shapes (2 functions,
 #       2 todoruleid markers; both rely on function-parameter sources
 #       which OSS taint mode does not model)
+#     - Class 8 ToUnicode entry point on digit-folding profiles (2
+#       functions, 2 sink markers; same UTS-46 validateAndMap pipeline
+#       as ToASCII, so the digit fold happens regardless)
 #     - Source-pattern coverage: URL.Hostname, Header.Get, os.Getenv,
 #       flag.String, bufio.Scanner.Text are 5 OSS sink markers; Decode
 #       to struct field and Scan via pointer are 2 todoruleid markers
@@ -63,5 +66,5 @@
 rules:
 - id: idna-ip-literal-smuggle
   expected:
-    positives: 21
+    positives: 23
     negatives: 6
