@@ -1,5 +1,5 @@
 rules:
-- id: idna-ip-literal-smuggle
+- id: idna-ip-literal-smuggle-experimental
   message: >-
     Untrusted hostname passes through golang.org/x/net/idna UTS-46
     ToASCII mapping and then reaches a network destination with no
@@ -28,11 +28,18 @@ rules:
     and pass the result to a network sink without rechecking against
     IP-literal parsers.
 
-    Tier note: this rule analyzes within a single function. Cross-file
-    taint flow is not modeled in the OSS tier; for cross-file analysis
-    use the Pro variant in `idna-ip-literal-smuggle-pro.yaml` or the
-    CodeQL companion query at
-    https://github.com/astrogilda/idna-ip-literal-smuggle-rules/tree/main/codeql
+    Tier note: EXPERIMENTAL opt-in variant. This rule extends the
+    OSS-tier rule (`idna-ip-literal-smuggle.yaml`) with a field-name
+    metavariable-regex source that flags any struct field whose
+    identifier matches a host-bearing convention
+    (Host|Hostname|Endpoint|Server|Address|Addr|Target|Upstream|Origin).
+    That source is high-noise: it will fire on any struct field with
+    one of those names regardless of whether the value originated from
+    untrusted input. Operators with high false-positive tolerance
+    (e.g., manual triage workflows, security-focused codebases with
+    small surface area) opt into this variant; everyone else should
+    use the strict OSS rule. This rule analyzes within a single
+    function. Cross-file taint flow is not modeled in the OSS tier.
 
     Tuning: empirical false-positive density on third-party Go code is
     non-trivial and varies by codebase shape. Operators should plan to
@@ -86,6 +93,13 @@ rules:
       # Database row scans (first-arg destination).
       - pattern: |
           ($R : *sql.Rows).Scan($DST, ...)
+      # Opt-in (experimental): any struct field whose name matches a
+      # host-bearing convention. High-noise; review every hit.
+      - patterns:
+        - pattern: $X.$FIELD
+        - metavariable-regex:
+            metavariable: $FIELD
+            regex: ^(Host|Hostname|Endpoint|Server|Address|Addr|Target|Upstream|Origin)$
 
   # A hardcoded fold-class codepoint flowing into ToASCII is high
   # confidence regardless of taint origin.
@@ -300,3 +314,4 @@ rules:
     - vuln
     vulnerability_class:
     - SSRF
+    experimental: true

@@ -1,5 +1,5 @@
 rules:
-- id: idna-ip-literal-smuggle
+- id: idna-ip-literal-smuggle-pro
   message: >-
     Untrusted hostname passes through golang.org/x/net/idna UTS-46
     ToASCII mapping and then reaches a network destination with no
@@ -28,11 +28,9 @@ rules:
     and pass the result to a network sink without rechecking against
     IP-literal parsers.
 
-    Tier note: this rule analyzes within a single function. Cross-file
-    taint flow is not modeled in the OSS tier; for cross-file analysis
-    use the Pro variant in `idna-ip-literal-smuggle-pro.yaml` or the
-    CodeQL companion query at
-    https://github.com/astrogilda/idna-ip-literal-smuggle-rules/tree/main/codeql
+    Tier note: this rule uses cross-file taint propagation (Semgrep
+    Pro). For intra-procedural OSS-tier analysis use
+    `idna-ip-literal-smuggle.yaml` instead.
 
     Tuning: empirical false-positive density on third-party Go code is
     non-trivial and varies by codebase shape. Operators should plan to
@@ -45,6 +43,7 @@ rules:
   # calibrate downstream.
   mode: taint
   options:
+    interfile: true
     taint_assume_safe_functions: false
 
   pattern-sources:
@@ -300,3 +299,4 @@ rules:
     - vuln
     vulnerability_class:
     - SSRF
+    pro: true

@@ -116,8 +116,18 @@ remap severity in their local Semgrep config.
 
 ## Out of scope
 
-- `golang.org/x/text/secure/precis` profiles. PRECIS uses a different
-  mapping table; covered by a sibling rule, not this one.
+- `golang.org/x/text/secure/precis` profiles. The fold surface varies by
+  profile rather than being uniformly disjoint:
+  - `precis.Nickname` (RFC 8266) applies `Norm(norm.NFKC)`, the same NFKC
+    table IDNA Lookup and MapForLookup use; the full 100-codepoint smuggle
+    surface applies. In scope; targeted by a sibling rule, deferred to v0.2.
+  - `precis.UsernameCaseMapped` and `precis.UsernameCasePreserved`
+    (RFC 8265) apply `FoldWidth + Norm(norm.NFC)`. The 10 Fullwidth-digit
+    codepoints fold; the other 90 codepoints in the IDNA surface do not.
+    Subset surface; sibling rule planned at reduced precision, deferred to
+    v0.2.
+  - `precis.OpaqueString` (RFC 8265) applies `Norm(norm.NFC)` only and has
+    no fold surface. Genuinely out of scope.
 - WHATWG-integrated URL parsers. Code that builds a `*url.URL` via
   `url.Parse` and never calls `idna.*.ToASCII` directly is out of scope.
   The parser already runs the IP-literal shape check post-decode.
