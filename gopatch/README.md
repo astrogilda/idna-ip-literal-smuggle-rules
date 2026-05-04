@@ -70,12 +70,47 @@ bash gopatch/idna-add-sentinel.sh ./path/to/file.go
 gopatch -p gopatch/idna-add-post-recheck.patch ./...
 find . -name '*.go' | xargs bash gopatch/idna-add-sentinel.sh
 
+# Recommended: dry-run stage 2 first on a real codebase to preview
+# per-package representative selection and collision detections:
+find . -name '*.go' | xargs bash gopatch/idna-add-sentinel.sh --dry-run
+
 # Diff mode: preview stage 1 changes without writing.
 gopatch -d -p gopatch/idna-add-post-recheck.patch ./...
 
 # End-to-end harness (needs gopatch + go on PATH + network for go mod tidy):
 bash gopatch/test_codemod.sh
 ```
+
+### Stage 2 semantics
+
+The sentinel is a **package-level** `var` declaration, so the script
+emits it **at most once per Go package** even when invoked with
+multiple files from the same package. Behavior:
+
+1. Inputs are grouped by `(package directory, package name)`. For each
+   package, the script picks one *representative* file (the first
+   input file that does not already carry the sentinel) and emits the
+   var-decl into that file only. Sibling files in the same package
+   are reported on stderr and left untouched.
+
+2. **Collision detection** runs over the entire package directory
+   (not just the input file list). A package is treated as "already
+   has the sentinel" if **any** `.go` file in it contains either:
+   - a `var`-decl for the canonical identifier
+     `errIDNAIPLiteralSmuggle`, OR
+   - the literal error-message body
+     `errors.New("idna: post-mapping IP literal smuggle")`.
+
+   The body match catches the case where an upstream caller has
+   already defined the same sentinel under an alternate identifier
+   (e.g. `var IDNASmuggle = errors.New(...)`); the script will not
+   emit a duplicate.
+
+3. **`--dry-run` / `-n`.** Prints the per-package decisions
+   (representative choice, collision file if any, planned import
+   modification, planned var-decl) without modifying any files.
+   Always run this first on a real codebase before committing the
+   write pass.
 
 ## Known limitations (scope intentionally not covered)
 
@@ -176,8 +211,14 @@ Six choices I made when shaping the codemod, with the reasoning:
    non-empty `-` match side and exactly one declaration per diff
    section, so there is no "add if absent" primitive. The sentinel is
    emitted by `idna-add-sentinel.sh`, a companion awk+gofmt script that
-   runs as stage 2. Idempotence is enforced by a definition-pattern
-   grep pre-flight in the script.
+   runs as stage 2. Idempotence is enforced by a two-path grep
+   pre-flight in the script: identifier match
+   (`errIDNAIPLiteralSmuggle`) and error-message-body match
+   (`errors.New("idna: post-mapping IP literal smuggle")`). The script
+   also groups input files by Go package and emits the var-decl in
+   exactly one representative file per package to prevent duplicate
+   declarations across sibling files. See the **Stage 2 semantics**
+   section above and run with `--dry-run` first to preview.
 
 6. **Codemod opt-in vs. default-on.** The codemod ships as an
    `examples/` patch, so it is always opt-in. No `--security-mode` flag
