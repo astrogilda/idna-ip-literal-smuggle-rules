@@ -122,15 +122,20 @@ module IdnaIpLiteralSmuggle {
    * mapped output.
    *
    * The set covered:
-   *   - package-level `golang.org/x/net/idna.ToASCII`
-   *   - method `(*golang.org/x/net/idna.Profile).ToASCII`
-   *   - method `(*golang.org/x/net/idna.Profile).ToUnicode` (mapping is the
-   *     same direction for digit-fold purposes; both `ToASCII` and `ToUnicode`
-   *     run the same `validateAndMap` pipeline)
+   *   - method `(*golang.org/x/net/idna.Profile).ToASCII` on a profile that
+   *     applies UTS-46 mapping (`Lookup`, `Display`, `Registration`, or any
+   *     `idna.New(idna.MapForLookup(), ...)`-constructed profile)
+   *   - method `(*golang.org/x/net/idna.Profile).ToUnicode` on the same
+   *     profiles (the digit-fold pipeline runs in `validateAndMap` before
+   *     the encode-as-Punycode-or-not branch, so `ToUnicode` produces the
+   *     same digit-folded output as `ToASCII`)
+   *
+   * The package-level `golang.org/x/net/idna.ToASCII` helper is
+   * intentionally NOT covered: it dispatches to `Punycode.process(...)`,
+   * which has a nil mapping function and does not run the UTS-46 fold.
+   * It has no smuggle surface and is treated as an unrelated identifier.
    */
   predicate idnaMappingCall(DataFlow::CallNode call) {
-    call.getTarget().hasQualifiedName("golang.org/x/net/idna", "ToASCII")
-    or
     call.(DataFlow::MethodCallNode)
         .getTarget()
         .hasQualifiedName("golang.org/x/net/idna", "Profile", ["ToASCII", "ToUnicode"])
@@ -218,9 +223,10 @@ module IdnaIpLiteralSmuggle {
    * Callers that omit the trim entirely are NOT sanitized by this
    * predicate and remain alertable.
    */
-  predicate safePostIdnaRecheck(DataFlow::Node node) {
+  predicate safePostIdnaRecheck(DataFlow::Node postIdnaSource, DataFlow::Node node) {
     exists(DataFlow::Node trimmed |
-      (trailingDotTrim(_, trimmed) or trailingDotSlice(_, trimmed)) and
+      (trailingDotTrim(postIdnaSource, trimmed) or
+       trailingDotSlice(postIdnaSource, trimmed)) and
       DataFlow::localFlow(trimmed, node) and
       ipLiteralRecheckInput(node)
     )
@@ -334,12 +340,20 @@ module IdnaIpLiteralSmuggle {
 
     /**
      * A correct post-IDNA IP-literal recheck (trailing-dot trim FOLLOWED
-     * BY `net.ParseIP` or equivalent) is a barrier in `TPostIdna`. A
-     * bare `net.ParseIP` without the prior trim is NOT a barrier; the
-     * alert remains.
+     * BY `net.ParseIP` or equivalent) is a barrier in `TPostIdna`. The
+     * trim source is bound to the post-IDNA-tainted predecessor so that
+     * an unrelated TrimRight + ParseIP construct elsewhere in the same
+     * scope does not silently sanitize the IDNA-tainted path. A bare
+     * `net.ParseIP` without the prior trim is NOT a barrier; the alert
+     * remains.
      */
     predicate isBarrier(DataFlow::Node node, FlowState state) {
-      state = TPostIdna() and safePostIdnaRecheck(node)
+      state = TPostIdna() and
+      exists(DataFlow::Node postIdnaResult, DataFlow::Node trimInput |
+        idnaMapInToOut(_, postIdnaResult) and
+        DataFlow::localFlow(postIdnaResult, trimInput) and
+        safePostIdnaRecheck(trimInput, node)
+      )
     }
 
     predicate observeDiffInformedIncrementalMode() { any() }
