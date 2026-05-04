@@ -192,16 +192,26 @@ import go
    * the idiomatic form `out[:len(out)-1]` omits it (implicit zero).
    */
   predicate trailingDotSlice(DataFlow::Node node, DataFlow::Node out) {
-    exists(Assignment asgn, SliceExpr se, DataFlow::CallNode lenCall, SubExpr sub |
-      asgn.getRhs() = se and
-      se.getBase() = node.asExpr() and
+    exists(SliceExpr se, DataFlow::CallNode lenCall, SubExpr sub |
       se.getHigh() = sub and
       sub.getRightOperand().getIntValue() = 1 and
       sub.getLeftOperand() = lenCall.asExpr() and
-      lenCall.getTarget().hasQualifiedName("builtin", "len") and
+      // builtin `len` has no enclosing package (Go pseudo-package "builtin"
+      // has no DataFlow representation); guard via callee name and the
+      // absence of a package qualifier on the target Function.
+      lenCall.getCalleeName() = "len" and
+      not exists(lenCall.getTarget().getPackage()) and
+      // The slice base, the len argument, and `node` all refer to the
+      // same SSA-level value. Match by global-value-number so that any
+      // of the three Reads can serve as the bound `node`.
+      se.getBase().(Ident).getGlobalValueNumber() =
+        node.asExpr().getGlobalValueNumber() and
       lenCall.getArgument(0).asExpr().getGlobalValueNumber() =
         node.asExpr().getGlobalValueNumber() and
-      out.asExpr() = asgn.getAnLhs()
+      // The trim output is the slice expression itself; data flow
+      // propagates from there through any subsequent assignment to the
+      // parse input via DataFlow::localFlow.
+      DataFlow::exprNode(se) = out
     )
   }
 
