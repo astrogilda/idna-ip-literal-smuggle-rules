@@ -126,7 +126,15 @@ import go
   predicate idnaMappingCall(DataFlow::CallNode call) {
     call.(DataFlow::MethodCallNode)
         .getTarget()
-        .hasQualifiedName("golang.org/x/net/idna", "Profile", ["ToASCII", "ToUnicode"])
+        .hasQualifiedName("golang.org/x/net/idna", "Profile", ["ToASCII", "ToUnicode"]) and
+    // Exclude the Punycode profile: it has nil UTS-46 mapping and so cannot
+    // produce the digit-fold smuggle. Detect by the receiver being the
+    // package-level `idna.Punycode` value.
+    not exists(DataFlow::Node recv |
+      recv = call.(DataFlow::MethodCallNode).getReceiver() and
+      recv.asExpr().(SelectorExpr).getBase().(Ident).getName() = "idna" and
+      recv.asExpr().(SelectorExpr).getSelector().getName() = "Punycode"
+    )
   }
 
   /**
@@ -212,9 +220,10 @@ import go
    * predicate and remain alertable.
    */
   predicate safePostIdnaRecheck(DataFlow::Node postIdnaSource, DataFlow::Node node) {
-    exists(DataFlow::Node trimmed |
-      (trailingDotTrim(postIdnaSource, trimmed) or
-       trailingDotSlice(postIdnaSource, trimmed)) and
+    exists(DataFlow::Node trimSource, DataFlow::Node trimmed |
+      DataFlow::localFlow(postIdnaSource, trimSource) and
+      (trailingDotTrim(trimSource, trimmed) or
+       trailingDotSlice(trimSource, trimmed)) and
       DataFlow::localFlow(trimmed, node) and
       ipLiteralRecheckInput(node)
     )
@@ -345,10 +354,10 @@ import go
      */
     predicate isBarrier(DataFlow::Node node, FlowState state) {
       state = TPostIdna() and
-      exists(DataFlow::Node postIdnaResult, DataFlow::Node trimInput |
+      exists(DataFlow::Node postIdnaResult, DataFlow::Node parseInput |
         idnaMapInToOut(_, postIdnaResult) and
-        DataFlow::localFlow(postIdnaResult, trimInput) and
-        safePostIdnaRecheck(trimInput, node)
+        DataFlow::localFlow(postIdnaResult, node) and
+        safePostIdnaRecheck(postIdnaResult, parseInput)
       )
     }
 
