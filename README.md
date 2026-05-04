@@ -1,5 +1,9 @@
 # idna-ip-literal-smuggle-rules
 
+> **Status: v0.0.1-alpha. Adversarial review surfaced material bugs that are
+> being fixed in v0.1.0. Production users should wait for the v0.1.0 tag.
+> See open issues for the full must-fix list.**
+
 Caller-side static-analysis rules and an auto-fix codemod for a Go
 hostname-canonicalization bug class: UTS-46 IDNA digit-fold IP-literal
 smuggling.
