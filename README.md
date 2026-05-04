@@ -46,7 +46,7 @@ subdirectory with its own per-tool README:
 | Tool | Subdirectory | What it does |
 |---|---|---|
 | CodeQL query | [codeql/](codeql/) | Stateful taint-tracking Go query (`go/idna-ip-literal-smuggle`). Two flow states (`TPreIdna`, `TPostIdna`) so a pre-IDNA `net.ParseIP` is not misread as a barrier. Includes inline-expectations test fixtures (positives + negatives) and `qhelp` examples. |
-| Semgrep rule | [semgrep/](semgrep/) | YAML rules using `mode: taint` with two-label propagator. Ships in two tiers: an OSS-tier intra-procedural rule, and a Pro-tier rule with cross-file taint flow. Severity is `WARNING`; empirical false-positive density on third-party Go is non-trivial and codebase-shape-dependent, so operators should plan to extend the sanitizer block with project-local trim helpers that satisfy the post-IDNA recheck contract. |
+| Semgrep rule | [semgrep/](semgrep/) | YAML rules using `mode: taint` with two labels (PRE_IDNA, POST_IDNA). Ships in three tiers: an OSS-tier intra-procedural rule, a Pro-tier rule with cross-file taint flow, and an experimental opt-in rule with a relaxed field-name source set. Severity is `WARNING`; empirical false-positive density on third-party Go is non-trivial and codebase-shape-dependent, so operators should plan to extend the sanitizer block with project-local trim helpers that satisfy the post-IDNA recheck contract. |
 | gopatch codemod | [gopatch/](gopatch/) | Two-stage Uber-gopatch auto-fix that inserts the canonical `TrimRight(_, ".") + netip.ParseAddr` recheck guard after every UTS-46-mapping `ToASCII` call, plus an awk + gofmt sentinel-injection script. |
 
 A standalone proof-of-concept demonstrating the bug class is in

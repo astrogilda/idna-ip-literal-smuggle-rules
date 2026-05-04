@@ -9,8 +9,10 @@ Author: Sankalp Gilda. License: MIT.
 
 | Path | Purpose |
 |---|---|
-| `idna-ip-literal-smuggle.yaml` | Rule definition. Taint mode, two-label propagator. |
-| `test/idna-ip-literal-smuggle.go` | Test fixtures: 9 positive cases, 3 negative cases. |
+| `idna-ip-literal-smuggle.yaml` | OSS-tier rule. Taint mode, two labels (PRE_IDNA, POST_IDNA), intra-procedural. |
+| `idna-ip-literal-smuggle-pro.yaml` | Pro-tier rule. Same shape, adds `interfile: true` for cross-file taint flow. |
+| `idna-ip-literal-smuggle-experimental.yaml` | Opt-in rule. Adds a relaxed field-name source set (Host, Hostname, Endpoint, Server, Address, Addr, Target, Upstream, Origin); higher noise. |
+| `test/idna-ip-literal-smuggle.go` | Test fixtures: 21 ruleid sink markers + 6 todoruleid (Pro-tier-only) + 6 ok markers. |
 | `test/idna-ip-literal-smuggle.test.yaml` | Semgrep test manifest. |
 
 ## Threat model
@@ -63,9 +65,12 @@ semgrep --test test/ --config idna-ip-literal-smuggle.yaml
 semgrep --config idna-ip-literal-smuggle.yaml /path/to/golang-net/
 ```
 
-`mode: taint` and `interfile: true` together require Semgrep Pro. The
-rule's `pattern-sources` and `pattern-sinks` shapes are valid in OSS
-Semgrep too, but cross-file taint propagation needs Pro.
+`interfile: true` (used in `idna-ip-literal-smuggle-pro.yaml`) requires
+Semgrep Pro. The OSS-tier rule (`idna-ip-literal-smuggle.yaml`) ships
+without `interfile:` and runs intra-procedurally on Semgrep's free tier.
+The experimental rule's relaxed field-name source set (Host, Hostname,
+Endpoint, Server, Address, Addr, Target, Upstream, Origin) trades
+precision for recall and is opt-in only.
 
 ## Submission plan: `semgrep/semgrep-rules`
 
